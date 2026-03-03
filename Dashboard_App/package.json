@@ -1,0 +1,15 @@
+{
+  "name": "localtime-dashboard",
+  "version": "1.0.0",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "build": "electron-packager . LocalTime --platform=darwin --overwrite --icon=icon.icns"
+  },
+  "dependencies": {
+    "electron": "^28.0.0"
+  },
+  "devDependencies": {
+    "electron-packager": "^17.1.2"
+  }
+}
