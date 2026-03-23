@@ -1,0 +1,37 @@
+# Dependencies
+node_modules/
+package-lock.json
+
+# Build artifacts
+Dashboard_App/LocalTime-darwin-arm64/
+MenuBarApp/build/
+
+# OS files
+.DS_Store
+
+# Logs
+*.log
+
+# Firebase
+.firebase/
+
+# Data files
+time_data.json
+session_history.json
+todos.json
+MenuBarApp/internships.json
+MenuBarApp/chat-history.json
+MenuBarApp/memory.json
+
+# Secrets and credentials — NEVER commit these
+*.env
+*-api-key.txt
+MenuBarApp/google-credentials.json
+MenuBarApp/google-token*.json
+MenuBarApp/spotify-credentials.json
+MenuBarApp/.spotify-token.json
+MenuBarApp/gemini-api-key.txt
+MenuBarApp/openai-api-key.txt
+
+# Editor/IDE
+.Rapp.history
