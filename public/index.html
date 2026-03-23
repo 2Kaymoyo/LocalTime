@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>LocalTime</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            background: #0f0f13;
+            color: #f2f3f5;
+            margin: 0;
+            min-height: 100vh;
+            display: flex;
+            justify-content: center;
+            border-radius: 12px;
+            overflow: hidden;
+        }
+
+        .drag-bar {
+            -webkit-app-region: drag;
+            height: 50px;
+            width: 100%;
+            position: fixed;
+            top: 0;
+            left: 0;
+            z-index: 1000;
+            cursor: grab;
+        }
+
+        .drag-bar:active {
+            cursor: grabbing;
+        }
+
+        .container {
+            -webkit-app-region: no-drag;
+        }
+
+        .container {
+            width: 100%;
+            max-width: 900px;
+            padding: 40px;
+            box-sizing: border-box;
+        }
+
+        .nav-bar {
+            display: flex;
+            gap: 20px;
+            margin-bottom: 30px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 20px;
+        }
+
+        .nav-btn {
+            background: none;
+            border: none;
+            color: #949ba4;
+            font-size: 16px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: color 0.2s;
+            padding: 0;
+        }
+
+        .nav-btn.active {
+            color: #5865F2;
+        }
+
+        .nav-btn:hover {
+            color: #f2f3f5;
+        }
+
+        .page {
+            display: none;
+        }
+
+        .page.active {
+            display: block;
+            animation: fadeIn 0.3s ease-in-out;
+        }
+
+        @keyframes fadeIn {
+            from {
+                opacity: 0;
+                transform: translateY(5px);
+            }
+
+            to {
+                opacity: 1;
+                transform: translateY(0);
+            }
+        }
+
+        /* PULSE */
+        .header {
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            margin-bottom: 40px;
+        }
+
+        .stat-card {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 30px;
+            border-radius: 16px;
+            flex: 1;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border: 2px solid transparent;
+        }
+
+        .score-val {
+            font-size: 48px;
+            font-weight: 800;
+        }
+
+        .score-lbl {
+            font-size: 12px;
+            color: #949ba4;
+            font-weight: bold;
+            letter-spacing: 1px;
+        }
+
+        .chart-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+            margin: 50px auto;
+            border-radius: 50%;
+            background: #313244;
+            transition: background 0.6s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .inner-circle {
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 240px;
+            height: 240px;
+            background: #0f0f13;
+            border-radius: 50%;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        /* WEEKLY TRACKER */
+        .bar-chart {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            height: 300px;
+            margin-top: 40px;
+            border-bottom: 2px solid rgba(255, 255, 255, 0.1);
+            padding-bottom: 10px;
+        }
+
+        .y-axis-group {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            width: 40px;
+        }
+
+        .y-axis-labels {
+            height: 250px;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            font-size: 11px;
+            color: #949ba4;
+            font-weight: bold;
+            border-right: 1px solid rgba(255, 255, 255, 0.1);
+            padding-right: 10px;
+            width: 100%;
+            text-align: right;
+        }
+
+        .bar-group {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 10px;
+            flex: 1;
+        }
+
+        .bar-container {
+            display: flex;
+            align-items: flex-end;
+            gap: 4px;
+            height: 250px;
+            width: 100%;
+            justify-content: center;
+        }
+
+        .bar {
+            width: 24px;
+            border-radius: 4px 4px 0 0;
+            transition: height 0.6s ease;
+            background: #43b581;
+        }
+
+        .day-label {
+            font-size: 13px;
+            color: #949ba4;
+            font-weight: bold;
+        }
+
+        .page-title {
+            font-size: 32px;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+
+        /* SETTINGS */
+        .rule-section {
+            background: rgba(255, 255, 255, 0.05);
+            padding: 25px;
+            border-radius: 16px;
+            margin-bottom: 20px;
+        }
+
+        .rule-title {
+            font-size: 14px;
+            font-weight: bold;
+            color: #5865F2;
+            margin-bottom: 12px;
+            letter-spacing: 1px;
+        }
+
+        .rule-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 15px;
+            min-height: 30px;
+        }
+
+        .rule-tag {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 6px 12px;
+            border-radius: 6px;
+            font-size: 13px;
+            display: flex;
+            align-items: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .rule-tag button {
+            background: none;
+            border: none;
+            color: #F04747;
+            cursor: pointer;
+            margin-left: 8px;
+            font-weight: bold;
+            font-size: 14px;
+        }
+
+        .add-rule-row {
+            display: flex;
+            gap: 10px;
+        }
+
+        .rule-input {
+            flex: 1;
+            background: rgba(0, 0, 0, 0.2);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 6px;
+            padding: 10px 14px;
+            color: #f2f3f5;
+            outline: none;
+            font-size: 14px;
+        }
+
+        .rule-input:focus {
+            border-color: #5865F2;
+        }
+
+        .rule-add-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: white;
+            border-radius: 6px;
+            padding: 0 18px;
+            font-weight: bold;
+            font-size: 18px;
+            cursor: pointer;
+        }
+
+        .rule-add-btn:hover {
+            background: #5865F2;
+        }
+
+        .save-btn {
+            background: #43b581;
+            color: white;
+            border: none;
+            border-radius: 8px;
+            padding: 14px 24px;
+            font-weight: bold;
+            cursor: pointer;
+            margin-top: 20px;
+            display: block;
+            width: 100%;
+            font-size: 15px;
+        }
+
+        .save-btn:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+    </style>
+</head>
+
+<body>
+    <div class="drag-bar"></div>
+    <div class="container" style="padding-top: 50px;">
+        <div class="nav-bar">
+            <button id="btn-pulse" class="nav-btn active">Pulse</button>
+            <button id="btn-timeline" class="nav-btn">Weekly Tracker</button>
+            <button id="btn-settings" class="nav-btn">Settings</button>
+        </div>
+
+        <!-- PULSE PAGE -->
+        <div id="page-pulse" class="page active">
+            <div class="header">
+                <div class="stat-card">
+                    <div>
+                        <div class="score-lbl">PRODUCTIVE</div>
+                        <div style="font-size: 12px; color: #949ba4; margin-top: 4px;">Minutes today</div>
+                    </div>
+                    <div id="tot-prod" class="score-val" style="color: #43b581;">0m</div>
+                </div>
+                <div class="stat-card">
+                    <div>
+                        <div class="score-lbl">UNPRODUCTIVE</div>
+                        <div style="font-size: 12px; color: #949ba4; margin-top: 4px;">Minutes today</div>
+                    </div>
+                    <div id="tot-dist" class="score-val" style="color: #F04747;">0m</div>
+                </div>
+            </div>
+            <div id="donut" class="chart-container">
+                <div class="inner-circle">
+                    <div class="score-lbl" style="margin-bottom: 5px;">EFFICIENCY</div>
+                    <div id="efficiency-score" style="font-size: 64px; font-weight: 800;">0%</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- WEEKLY TRACKER PAGE -->
+        <div id="page-timeline" class="page">
+            <div class="page-title">Productivity Timeline</div>
+            <div style="color: #949ba4; font-size: 13px; margin-top: 10px;">Your focus percentage over the last 7 days.
+            </div>
+            <div id="timeline-chart" class="bar-chart"></div>
+        </div>
+
+        <!-- SETTINGS PAGE -->
+        <div id="page-settings" class="page">
+            <div class="page-title">Productive Sites & Keywords</div>
+            <div style="color: #949ba4; font-size: 13px; margin-bottom: 25px;">Anything not matching these rules is
+                automatically categorized as unproductive.</div>
+
+            <div class="rule-section">
+                <div class="rule-title">PRODUCTIVE DOMAINS</div>
+                <div id="domain-list" class="rule-list"></div>
+                <div class="add-rule-row">
+                    <input type="text" id="input-domains" class="rule-input" placeholder="e.g. docs.google.com"
+                        onkeypress="handleEnter(event, 'domains')">
+                    <button class="rule-add-btn" onclick="addRule('domains')">+</button>
+                </div>
+            </div>
+
+            <div class="rule-section">
+                <div class="rule-title">PRODUCTIVE KEYWORDS</div>
+                <div id="keyword-list" class="rule-list"></div>
+                <div class="add-rule-row">
+                    <input type="text" id="input-keywords" class="rule-input" placeholder="e.g. economics"
+                        onkeypress="handleEnter(event, 'keywords')">
+                    <button class="rule-add-btn" onclick="addRule('keywords')">+</button>
+                </div>
+            </div>
+
+            <div class="rule-section">
+                <div class="rule-title">PRODUCTIVE APPS</div>
+                <div id="app-list" class="rule-list"></div>
+                <div class="add-rule-row">
+                    <input type="text" id="input-apps" class="rule-input" placeholder="e.g. Code, Terminal, Zoom"
+                        onkeypress="handleEnter(event, 'apps')">
+                    <button class="rule-add-btn" onclick="addRule('apps')">+</button>
+                </div>
+            </div>
+
+            <button id="save-rules" class="save-btn" disabled>Save Configuration</button>
+            <div id="save-msg"
+                style="color: #43b581; font-weight: bold; text-align: center; margin-top: 10px; display: none;">Saved
+                successfully!</div>
+        </div>
+    </div>
+
+    <script type="module" src="app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,28 @@
+{
+    "categories": [
+        "Productive (School & Career)",
+        "Environmental Justice Work",
+        "Rock Climbing Logistics",
+        "Distractions"
+    ],
+    "distraction_apps": ["messages", "spotify", "tv", "minecraft", "steam", "music"],
+    "distraction_urls": ["youtube.com", "youtu.be", "instagram.com"],
+    "productive_apps": [
+        "word", "pages", "keynote", "code", "terminal", "zoom", "preview",
+        "notes", "goodnotes", "to-do", "todo", "acrobat", "discord",
+        "focus matrix", "ebookcentral", "imovie", "kindle", "powerpoint",
+        "morgen", "teams", "obsidian"
+    ],
+    "productive_urls": [
+        "docs.google", "drive.google", "mail.google", "calendar.google",
+        "canvas", "instructure", "handshake", "joinhandshake",
+        "pitzer.edu", "pomona.edu", "cmc.edu", "claremont", "ebookcentral",
+        "intern", "internship", "work", "job", "office", "economics", "political"
+    ],
+    "ej_urls": [
+        "climate", "epa.gov", "sustainability", "energy", "fossil",
+        "environment", "environmental", "policy", "law", "politics",
+        "research", "advocacy", "organizing", "volunteering"
+    ],
+    "climbing_urls": ["climb", "mountainproject", "boulder"]
+}
