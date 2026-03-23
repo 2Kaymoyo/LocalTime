@@ -4,6 +4,13 @@
 <dict>
     <key>Label</key>
     <string>com.localtime.desktop</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>FIREBASE_PROJECT_ID</key>
+        <string>YOUR_PROJECT_ID</string>
+        <key>FIREBASE_API_KEY</key>
+        <string>YOUR_FIREBASE_API_KEY</string>
+    </dict>
     <key>ProgramArguments</key>
     <array>
         <string>/usr/bin/python3</string>
