@@ -1,13 +1,14 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, doc, onSnapshot, getDoc, setDoc, updateDoc, increment } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
+// See .env.example for required Firebase configuration values
 const firebaseConfig = {
     apiKey: "YOUR_FIREBASE_API_KEY",
     authDomain: "YOUR_APP.firebaseapp.com",
     projectId: "YOUR_PROJECT_ID",
     storageBucket: "YOUR_APP.firebasestorage.app",
     messagingSenderId: "YOUR_SENDER_ID",
-    appId: "1:YOUR_SENDER_ID:web:4e5e47899b69ef7c83bce5"
+    appId: "YOUR_APP_ID"
 };
 
 const app = initializeApp(firebaseConfig);
@@ -25,7 +26,7 @@ if (window.electronAPI) {
     });
 }
 
-const pages = ['pulse', 'internships', 'tasks', 'calendar', 'timeline', 'settings'];
+const pages = ['pulse', 'internships', 'tasks', 'calendar', 'settings'];
 pages.forEach(p => {
     document.getElementById(`btn-${p}`).addEventListener('click', () => switchPage(p));
 });
@@ -35,7 +36,6 @@ function switchPage(pageId) {
     document.querySelectorAll('.nav-btn').forEach(b => b.classList.remove('active'));
     document.getElementById(`page-${pageId}`).classList.add('active');
     document.getElementById(`btn-${pageId}`).classList.add('active');
-    if (pageId === 'timeline') loadTimeline();
     if (pageId === 'tasks') {
         // Show cached immediately, refresh in background
         if (cachedTasks.length) { renderTasks(); loadTasks(); }
@@ -68,6 +68,7 @@ setTimeout(() => {
 let lastLogsData = {};
 
 // --- TIME BUDGET (must be defined before listeners that call renderTimeBudgetDonuts) ---
+const allocationExpandedRows = new Set();
 const ACTIVITY_KEYS = ['academic', 'professional', 'ejEducation', 'vpSustainability', 'ejCampaign'];
 const ACTIVITY_LABELS = { ejEducation: 'EJ Education', ejCampaign: 'EJ Campaign', vpSustainability: 'VP Sustainability', professional: 'Professional', academic: 'Academic' };
 const ACTIVITY_COLORS = { ejEducation: '#43b581', ejCampaign: '#F04747', vpSustainability: '#FAA61A', professional: '#9ca3af', academic: '#5865F2' };
@@ -543,45 +544,6 @@ document.getElementById('pomo-start')?.addEventListener('click', async () => {
     updateActivityTimerDisplay();
 });
 
-// --- TIMELINE ---
-async function loadTimeline() {
-    const dates = [];
-    for (let i = 6; i >= 0; i--) {
-        let d = new Date();
-        d.setDate(d.getDate() - i);
-        dates.push(d.toLocaleDateString('en-CA'));
-    }
-
-    const container = document.getElementById('timeline-chart');
-    container.innerHTML = `<div class="y-axis-group"><div class="y-axis-labels"><span>100%</span><span>75%</span><span>50%</span><span>25%</span><span>0%</span></div><div class="day-label" style="color:transparent;">--</div></div>`;
-
-    for (const dStr of dates) {
-        let eff = 0;
-        try {
-            const snap = await getDoc(doc(db, "logs", dStr));
-            if (snap.exists()) {
-                const data = snap.data();
-                const prod = data.Productive || 0;
-                const unprod = data.Unproductive || 0;
-                const total = prod + unprod;
-                eff = total > 0 ? Math.round((prod / total) * 100) : 0;
-            }
-        } catch (e) { console.error(e); }
-
-        const unprodPct = 100 - eff;
-        container.innerHTML += `
-            <div class="bar-group">
-                <div class="bar-container">
-                    <div style="width: 24px; display: flex; flex-direction: column; height: 100%;">
-                        <div style="flex: ${unprodPct}; background: #F04747; border-radius: 4px 4px 0 0; min-height: ${unprodPct > 0 ? '2px' : '0'};"></div>
-                        <div style="flex: ${eff}; background: #43b581; min-height: ${eff > 0 ? '2px' : '0'};"></div>
-                    </div>
-                </div>
-                <div class="day-label">${dStr.slice(-5)}</div>
-            </div>`;
-    }
-}
-
 // --- SETTINGS ---
 let localRules = { domains: [], keywords: [], apps: [] };
 const defaultRules = { domains: ["docs.google.com", "drive.google.com", "mail.google.com"], keywords: ["internship"], apps: ["Code", "Terminal", "Zoom", "Notes", "Preview"] };
@@ -634,7 +596,157 @@ async function loadSettings() {
     }
 
     renderRules();
+    loadRecommendationsConfig();
+    loadAccountManager();
 }
+
+// --- ACCOUNT CONNECTION MANAGER ---
+const SPOTIFY_PROXY = 'http://127.0.0.1:4004';
+const NOTION_PROXY = 'http://127.0.0.1:19876';
+
+async function loadAccountManager() {
+    try {
+        const [gcalStatus, gcalInfo, spotifyInfo, notionInfo] = await Promise.all([
+            fetch(`${GCAL}/gcal/status`).then(r => r.json()).catch(() => ({})),
+            fetch(`${GCAL}/gcal/account-info`).then(r => r.json()).catch(() => ({})),
+            fetch(`${SPOTIFY_PROXY}/account-info`).then(r => r.json()).catch(() => ({ connected: false })),
+            fetch(`${NOTION_PROXY}/account-info`).then(r => r.json()).catch(() => ({ connected: false }))
+        ]);
+
+        // Google accounts
+        for (const acc of [1, 2]) {
+            const emailEl = document.getElementById(`acct-email-${acc}`);
+            const actionEl = document.getElementById(`acct-action-${acc}`);
+            if (!emailEl || !actionEl) continue;
+            const connected = gcalStatus[`account${acc}`];
+            if (connected) {
+                const email = gcalInfo[`account${acc}`]?.email || 'Connected';
+                emailEl.textContent = email;
+                emailEl.style.color = '#43b581';
+                actionEl.innerHTML = `<button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px;width:auto;background:#F04747;" onclick="window.disconnectGoogleAccount(${acc})">Disconnect</button>`;
+            } else {
+                emailEl.textContent = 'Not connected';
+                emailEl.style.color = '#949ba4';
+                actionEl.innerHTML = `<button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px;width:auto;background:#5865F2;" onclick="window.connectAccountFromSettings(${acc})">Connect</button>`;
+            }
+        }
+
+        // Spotify
+        const spotifyInfoEl = document.getElementById('acct-spotify-info');
+        const spotifyActionEl = document.getElementById('acct-spotify-action');
+        if (spotifyInfoEl && spotifyActionEl) {
+            if (spotifyInfo.connected) {
+                const label = spotifyInfo.displayName || spotifyInfo.email || 'Connected';
+                spotifyInfoEl.textContent = label;
+                spotifyInfoEl.style.color = '#1DB954';
+                spotifyActionEl.innerHTML = `<button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px;width:auto;background:#F04747;" onclick="window.disconnectSpotifyFromSettings()">Disconnect</button>`;
+            } else {
+                spotifyInfoEl.textContent = 'Not connected';
+                spotifyInfoEl.style.color = '#949ba4';
+                spotifyActionEl.innerHTML = `<button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px;width:auto;background:#1DB954;" onclick="window.connectSpotifyFromSettings()">Connect</button>`;
+            }
+        }
+
+        // Notion
+        const notionInfoEl = document.getElementById('acct-notion-info');
+        const notionActionEl = document.getElementById('acct-notion-action');
+        if (notionInfoEl) {
+            if (notionInfo.connected) {
+                const label = notionInfo.workspaceName || notionInfo.name || 'Connected';
+                notionInfoEl.textContent = label;
+                notionInfoEl.style.color = '#43b581';
+                if (notionActionEl) notionActionEl.innerHTML = `<span style="color:#43b581;font-size:12px;font-weight:700;">Connected</span>`;
+            } else {
+                notionInfoEl.textContent = 'Not configured';
+                notionInfoEl.style.color = '#949ba4';
+                if (notionActionEl) notionActionEl.innerHTML = `<span style="color:#949ba4;font-size:11px;">Set NOTION_TOKEN in .env</span>`;
+            }
+        }
+    } catch (e) {
+        console.error('Account manager load error:', e);
+    }
+}
+
+window.connectAccountFromSettings = async function (account) {
+    const actionEl = document.getElementById(`acct-action-${account}`);
+    const emailEl = document.getElementById(`acct-email-${account}`);
+    if (actionEl) actionEl.innerHTML = `<span style="color:#949ba4;font-size:12px;">Waiting for browser...</span>`;
+    if (emailEl) emailEl.textContent = 'Authorizing...';
+    try {
+        await fetch(`${GCAL}/gcal/auth?account=${account}`);
+        const poll = setInterval(async () => {
+            const res = await fetch(`${GCAL}/gcal/status`);
+            const data = await res.json();
+            if (data[`account${account}`]) {
+                clearInterval(poll);
+                loadAccountManager();
+                if (typeof initCalendar === 'function') initCalendar();
+            }
+        }, 2000);
+    } catch (e) {
+        console.error('Connect error:', e);
+        if (emailEl) emailEl.textContent = 'Connection failed';
+        if (actionEl) actionEl.innerHTML = `<button class="save-btn" style="margin:0;padding:6px 14px;font-size:12px;width:auto;background:#5865F2;" onclick="window.connectAccountFromSettings(${account})">Retry</button>`;
+    }
+};
+
+window.disconnectGoogleAccount = async function (account) {
+    const actionEl = document.getElementById(`acct-action-${account}`);
+    if (actionEl) {
+        actionEl.innerHTML = `<span style="color:#F04747;font-size:12px;cursor:pointer;font-weight:700;" onclick="window.confirmDisconnectGoogle(${account})">Confirm?</span> <span style="color:#949ba4;font-size:12px;cursor:pointer;margin-left:8px;" onclick="loadAccountManager()">Cancel</span>`;
+    }
+};
+
+window.confirmDisconnectGoogle = async function (account) {
+    const emailEl = document.getElementById(`acct-email-${account}`);
+    if (emailEl) emailEl.textContent = 'Disconnecting...';
+    try {
+        await fetch(`${GCAL}/gcal/disconnect`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ account })
+        });
+    } catch (e) { console.error('Disconnect error:', e); }
+    loadAccountManager();
+    if (typeof initCalendar === 'function') initCalendar();
+};
+
+window.connectSpotifyFromSettings = async function () {
+    const actionEl = document.getElementById('acct-spotify-action');
+    const infoEl = document.getElementById('acct-spotify-info');
+    if (actionEl) actionEl.innerHTML = `<span style="color:#949ba4;font-size:12px;">Waiting for browser...</span>`;
+    if (infoEl) infoEl.textContent = 'Authorizing...';
+    try {
+        window.open(`${SPOTIFY_PROXY}/auth`, '_blank');
+        const poll = setInterval(async () => {
+            const res = await fetch(`${SPOTIFY_PROXY}/status`);
+            const data = await res.json();
+            if (data.isAuthenticated) {
+                clearInterval(poll);
+                loadAccountManager();
+            }
+        }, 2000);
+    } catch (e) {
+        console.error('Spotify connect error:', e);
+        if (infoEl) infoEl.textContent = 'Connection failed';
+    }
+};
+
+window.disconnectSpotifyFromSettings = async function () {
+    const actionEl = document.getElementById('acct-spotify-action');
+    if (actionEl) {
+        actionEl.innerHTML = `<span style="color:#F04747;font-size:12px;cursor:pointer;font-weight:700;" onclick="window.confirmDisconnectSpotify()">Confirm?</span> <span style="color:#949ba4;font-size:12px;cursor:pointer;margin-left:8px;" onclick="loadAccountManager()">Cancel</span>`;
+    }
+};
+
+window.confirmDisconnectSpotify = async function () {
+    const infoEl = document.getElementById('acct-spotify-info');
+    if (infoEl) infoEl.textContent = 'Disconnecting...';
+    try {
+        await fetch(`${SPOTIFY_PROXY}/disconnect`, { method: 'POST' });
+    } catch (e) { console.error('Spotify disconnect error:', e); }
+    loadAccountManager();
+};
 
 function serializeTimeBudgetForFirestore(tb) {
     return tb; // Firestore accepts plain objects; numbers/arrays fine
@@ -656,23 +768,9 @@ function renderTimeBudgetSettings() {
     const gcal = document.getElementById('tb-gcal-names');
     if (gcal) gcal.value = (tb.calendarSources?.gcalNames || ['Extracurriculars', 'Work']).join(', ');
 
-    // Allocation table: rows = activities, cols = Sun-Sat
-    const table = document.getElementById('tb-allocation-table');
-    if (table) {
-        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-        let html = '<table style="width:100%; border-collapse: collapse;"><thead><tr><th style="text-align:left; padding:12px 10px; color:#949ba4;">Activity</th>';
-        dayNames.forEach(d => { html += `<th style="padding:12px 10px; color:#949ba4;">${d}</th>`; });
-        html += '</tr></thead><tbody>';
-        ACTIVITY_KEYS.forEach(k => {
-            const acts = tb.activities?.[k]?.minutesPerDay || defaultMinutesPerDay();
-            html += `<tr><td style="padding:14px 10px;"><span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${ACTIVITY_COLORS[k]};margin-right:10px;"></span>${ACTIVITY_LABELS[k]}</td>`;
-            for (let d = 0; d < 7; d++) {
-                html += `<td style="padding:10px;"><input type="number" id="tb-alloc-${k}-${d}" class="rule-input" min="0" value="${acts[d] ?? 60}" style="width:70px; padding:8px;"></td>`;
-            }
-            html += '</tr>';
-        });
-        html += '</tbody></table>';
-        table.innerHTML = html;
+    // Allocation table: rows = activities, collapsed to Weekday/Weekend by default
+    if (document.getElementById('tb-allocation-table')) {
+        renderAllocationTable(tb);
     }
 
     // Activity rules (collapsible per activity)
@@ -706,12 +804,21 @@ function collectTimeBudgetFromForm() {
     tb.calendarSources.gcalNames = gcalStr ? gcalStr.split(',').map(s => s.trim()).filter(Boolean) : [];
 
     ACTIVITY_KEYS.forEach(k => {
-        for (let d = 0; d < 7; d++) {
-            const inp = document.getElementById(`tb-alloc-${k}-${d}`);
-            if (inp) {
-                const v = parseInt(inp.value, 10);
+        if (document.getElementById(`tb-alloc-${k}-0`)) {
+            // expanded: read all 7 days
+            for (let d = 0; d < 7; d++) {
+                const v = parseInt(document.getElementById(`tb-alloc-${k}-${d}`)?.value, 10);
                 tb.activities[k].minutesPerDay[d] = isNaN(v) ? 60 : Math.max(0, v);
             }
+        } else {
+            // collapsed: apply weekday value to Mon–Fri, weekend to Sat/Sun
+            const wd = parseInt(document.getElementById(`tb-alloc-${k}-wd`)?.value, 10);
+            const we = parseInt(document.getElementById(`tb-alloc-${k}-we`)?.value, 10);
+            const wdVal = isNaN(wd) ? 60 : Math.max(0, wd);
+            const weVal = isNaN(we) ? 60 : Math.max(0, we);
+            tb.activities[k].minutesPerDay[0] = weVal;
+            for (let d = 1; d <= 5; d++) tb.activities[k].minutesPerDay[d] = wdVal;
+            tb.activities[k].minutesPerDay[6] = weVal;
         }
         const domainsStr = document.getElementById(`tb-ar-domains-${k}`)?.value?.trim() || '';
         const keywordsStr = document.getElementById(`tb-ar-keywords-${k}`)?.value?.trim() || '';
@@ -723,6 +830,73 @@ function collectTimeBudgetFromForm() {
         };
     });
     return tb;
+}
+
+function renderAllocationTable(tb) {
+    const table = document.getElementById('tb-allocation-table');
+    if (!table) return;
+    const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+    let html = '<div style="display:flex; flex-direction:column; gap:10px;">';
+    ACTIVITY_KEYS.forEach(k => {
+        const acts = tb.activities?.[k]?.minutesPerDay || defaultMinutesPerDay();
+        const wdVal = acts[1];
+        const weVal = acts[0];
+        const allWdSame = [1, 2, 3, 4, 5].every(d => acts[d] === wdVal);
+        const allWeSame = [0, 6].every(d => acts[d] === weVal);
+        // Auto-expand rows whose saved data already varies across days
+        if (!allWdSame || !allWeSame) allocationExpandedRows.add(k);
+        const isExpanded = allocationExpandedRows.has(k);
+        html += `<div style="background:rgba(0,0,0,0.15); border-radius:8px; padding:14px 16px;">`;
+        html += `<div style="display:flex; align-items:center; justify-content:space-between; margin-bottom:12px;">`;
+        html += `<div style="display:flex; align-items:center; gap:10px; font-size:13px; font-weight:600; color:#f2f3f5;">`;
+        html += `<span style="display:inline-block;width:10px;height:10px;border-radius:50%;background:${ACTIVITY_COLORS[k]};flex-shrink:0;"></span>${ACTIVITY_LABELS[k]}`;
+        html += `</div>`;
+        html += `<button onclick="toggleAllocationRow('${k}')" style="background:none;border:1px solid rgba(255,255,255,0.15);color:#949ba4;border-radius:4px;padding:3px 10px;font-size:11px;cursor:pointer;">${isExpanded ? 'Collapse' : 'Per day'}</button>`;
+        html += `</div>`;
+        if (isExpanded) {
+            html += `<div style="display:grid; grid-template-columns:repeat(7,1fr); gap:8px;">`;
+            for (let d = 0; d < 7; d++) {
+                html += `<div><div style="font-size:10px; color:#949ba4; text-align:center; margin-bottom:4px;">${dayNames[d]}</div>`;
+                html += `<input type="number" id="tb-alloc-${k}-${d}" class="rule-input" min="0" value="${acts[d] ?? 60}" style="width:100%; padding:8px; text-align:center;"></div>`;
+            }
+            html += `</div>`;
+        } else {
+            html += `<div style="display:grid; grid-template-columns:1fr 1fr; gap:12px;">`;
+            html += `<div><div style="font-size:11px; color:#949ba4; margin-bottom:6px;">Weekdays (Mon–Fri)</div>`;
+            html += `<input type="number" id="tb-alloc-${k}-wd" class="rule-input" min="0" value="${wdVal ?? 60}" style="width:100%; padding:8px; text-align:center;"></div>`;
+            html += `<div><div style="font-size:11px; color:#949ba4; margin-bottom:6px;">Weekend (Sat–Sun)</div>`;
+            html += `<input type="number" id="tb-alloc-${k}-we" class="rule-input" min="0" value="${weVal ?? 60}" style="width:100%; padding:8px; text-align:center;"></div>`;
+            html += `</div>`;
+        }
+        html += `</div>`;
+    });
+    html += '</div>';
+    table.innerHTML = html;
+}
+
+window.toggleAllocationRow = function toggleAllocationRow(k) {
+    // Snapshot current input values into localTimeBudget before re-rendering
+    if (!localTimeBudget.activities[k]) localTimeBudget.activities[k] = { color: ACTIVITY_COLORS[k], minutesPerDay: defaultMinutesPerDay() };
+    if (document.getElementById(`tb-alloc-${k}-0`)) {
+        for (let d = 0; d < 7; d++) {
+            const v = parseInt(document.getElementById(`tb-alloc-${k}-${d}`)?.value, 10);
+            localTimeBudget.activities[k].minutesPerDay[d] = isNaN(v) ? 60 : Math.max(0, v);
+        }
+    } else {
+        const wd = parseInt(document.getElementById(`tb-alloc-${k}-wd`)?.value, 10);
+        const we = parseInt(document.getElementById(`tb-alloc-${k}-we`)?.value, 10);
+        const wdVal = isNaN(wd) ? 60 : Math.max(0, wd);
+        const weVal = isNaN(we) ? 60 : Math.max(0, we);
+        localTimeBudget.activities[k].minutesPerDay[0] = weVal;
+        for (let d = 1; d <= 5; d++) localTimeBudget.activities[k].minutesPerDay[d] = wdVal;
+        localTimeBudget.activities[k].minutesPerDay[6] = weVal;
+    }
+    if (allocationExpandedRows.has(k)) {
+        allocationExpandedRows.delete(k);
+    } else {
+        allocationExpandedRows.add(k);
+    }
+    renderAllocationTable(localTimeBudget);
 }
 
 document.getElementById('tb-sync-calendars')?.addEventListener('click', async () => {
@@ -1028,7 +1202,36 @@ async function loadInternships() {
         data = [];
     }
     renderInternships(data);
+    renderSubmitted(data);
 }
+
+window.switchInternshipTab = function (tab) {
+    const activeContainer = document.getElementById('internships-container');
+    const submittedContainer = document.getElementById('submitted-container');
+    const recommendedContainer = document.getElementById('recommended-container');
+    const activeTab = document.getElementById('intern-tab-active');
+    const submittedTab = document.getElementById('intern-tab-submitted');
+    const recommendedTab = document.getElementById('intern-tab-recommended');
+
+    activeContainer.style.display = 'none';
+    submittedContainer.style.display = 'none';
+    if (recommendedContainer) recommendedContainer.style.display = 'none';
+    activeTab.classList.remove('intern-tab-active');
+    submittedTab.classList.remove('intern-tab-active');
+    if (recommendedTab) recommendedTab.classList.remove('intern-tab-active');
+
+    if (tab === 'active') {
+        activeContainer.style.display = '';
+        activeTab.classList.add('intern-tab-active');
+    } else if (tab === 'submitted') {
+        submittedContainer.style.display = '';
+        submittedTab.classList.add('intern-tab-active');
+    } else if (tab === 'recommended') {
+        if (recommendedContainer) recommendedContainer.style.display = '';
+        if (recommendedTab) recommendedTab.classList.add('intern-tab-active');
+        loadRecommendations();
+    }
+};
 
 async function saveInternships(data) {
     try {
@@ -1057,12 +1260,12 @@ function renderInternships(data) {
     const container = document.getElementById('internships-container');
     if (!container) return;
     container.innerHTML = '';
-    if (!data || data.length === 0) {
-        container.innerHTML = '<div class="internships-loading">No internships yet. Add one to get started.</div>';
+    const active = (data || []).filter(i => !i.submittedAt);
+    if (active.length === 0) {
+        container.innerHTML = '<div class="internships-loading">No active applications. Add one to get started.</div>';
         return;
     }
-    const today = new Date().toISOString().slice(0, 10);
-    const sorted = [...data].sort((a, b) => {
+    const sorted = [...active].sort((a, b) => {
         const da = a.personalDueDate || a.officialDueDate || '9999-99-99';
         const db = b.personalDueDate || b.officialDueDate || '9999-99-99';
         return da.localeCompare(db);
@@ -1078,6 +1281,12 @@ function renderInternships(data) {
         btn.addEventListener('click', (e) => {
             e.stopPropagation();
             window.openInternshipEdit(btn.dataset.id);
+        });
+    });
+    container.querySelectorAll('.internship-done-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.markInternshipDone(btn.dataset.id);
         });
     });
     container.querySelectorAll('.internship-delete-btn').forEach(btn => {
@@ -1134,6 +1343,7 @@ function createInternshipCard(internship) {
             </div>
             <div class="internship-card-actions">
                 ${isValidUrl ? `<a href="${escapeHtml(url)}" class="internship-open-link" target="_blank" rel="noopener noreferrer">Open</a>` : ''}
+                <button class="task-status-btn internship-done-btn" data-id="${internship.id}" style="color:#43b581;">✓ Done</button>
                 <button class="task-status-btn internship-edit-btn" data-id="${internship.id}">✎ Edit</button>
                 <button class="task-status-btn internship-delete-btn" data-id="${internship.id}">Delete</button>
             </div>
@@ -1359,6 +1569,329 @@ window.deleteInternship = async function (id) {
     await saveInternships(data);
     loadInternships();
 };
+
+window.pullFromSheets = async function () {
+    const btn = document.getElementById('pull-sheets-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Pulling...'; }
+    try {
+        const res = await fetch(`${GCAL}/sheets/pull`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Pull failed');
+        await loadInternships();
+        if (btn) btn.textContent = 'Pulled!';
+        setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = '↓ Pull from Sheets'; } }, 2000);
+    } catch (e) {
+        alert('Pull from Sheets failed: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = '↓ Pull from Sheets'; }
+    }
+};
+
+window.syncWithNotion = async function () {
+    const btn = document.getElementById('notion-sync-btn');
+    // Check if configured; if not, show setup overlay
+    try {
+        const statusRes = await fetch(`${NOTION_PROXY}/internships/status`);
+        const status = await statusRes.json();
+        if (!status.configured) {
+            document.getElementById('notion-internship-setup-overlay').style.display = 'flex';
+            return;
+        }
+    } catch (e) {
+        document.getElementById('notion-internship-setup-overlay').style.display = 'flex';
+        return;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = 'Syncing...'; }
+    try {
+        const res = await fetch(`${CHAT_PROXY}/internships/notion-sync`, { method: 'POST' });
+        const data = await res.json();
+        if (!data.success) throw new Error(data.error || 'Sync failed');
+        await loadInternships();
+        if (btn) btn.textContent = 'Synced!';
+        setTimeout(() => { if (btn) { btn.disabled = false; btn.textContent = '⇅ Sync with Notion'; } }, 2000);
+    } catch (e) {
+        alert('Notion sync failed: ' + e.message);
+        if (btn) { btn.disabled = false; btn.textContent = '⇅ Sync with Notion'; }
+    }
+};
+
+window.setupNotionInternships = async function () {
+    const input = document.getElementById('notion-parent-page-input');
+    const raw = (input?.value || '').trim();
+    if (!raw) { alert('Please enter a Notion page URL or ID.'); return; }
+    // Extract 32-char hex ID from URL or plain ID
+    const match = raw.replace(/-/g, '').match(/([a-f0-9]{32})/i);
+    if (!match) { alert('Could not parse a valid Notion page ID from that input.'); return; }
+    const parentPageId = match[1];
+    const internships = await getInternshipsData();
+    try {
+        const res = await fetch(`${NOTION_PROXY}/internships/setup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parentPageId, internships })
+        });
+        const data = await res.json();
+        if (!data.ok) throw new Error(data.error || 'Setup failed');
+        window.closeNotionSetup();
+        alert('Internship Tracker database created in Notion and synced!');
+    } catch (e) {
+        alert('Notion setup failed: ' + e.message);
+    }
+};
+
+window.closeNotionSetup = function () {
+    const overlay = document.getElementById('notion-internship-setup-overlay');
+    if (overlay) overlay.style.display = 'none';
+};
+
+window.markInternshipDone = async function (id) {
+    const data = await getInternshipsData();
+    const idx = data.findIndex(i => i.id === id);
+    if (idx === -1) return;
+    data[idx].submittedAt = new Date().toISOString().slice(0, 10);
+    if (!data[idx].status) data[idx].status = 'applied';
+    await saveInternships(data);
+    renderInternships(data);
+    renderSubmitted(data);
+    window.switchInternshipTab('submitted');
+};
+
+window.updateInternshipStatus = async function (id, status) {
+    const data = await getInternshipsData();
+    const idx = data.findIndex(i => i.id === id);
+    if (idx === -1) return;
+    data[idx].status = status;
+    await saveInternships(data);
+    renderSubmitted(data);
+};
+
+window.unmarkInternshipDone = async function (id) {
+    const data = await getInternshipsData();
+    const idx = data.findIndex(i => i.id === id);
+    if (idx === -1) return;
+    delete data[idx].submittedAt;
+    await saveInternships(data);
+    renderInternships(data);
+    renderSubmitted(data);
+    window.switchInternshipTab('active');
+};
+
+async function loadSubmitted() {
+    const data = await getInternshipsData();
+    renderSubmitted(data);
+}
+
+function renderSubmitted(data) {
+    const container = document.getElementById('submitted-container');
+    if (!container) return;
+    container.innerHTML = '';
+    const done = (data || []).filter(i => i.submittedAt);
+    if (done.length === 0) {
+        container.innerHTML = '<div class="internships-loading">No submitted applications yet. Mark one as done from the Internship Tracker.</div>';
+        return;
+    }
+    const sorted = [...done].sort((a, b) => (b.submittedAt || '').localeCompare(a.submittedAt || ''));
+    sorted.forEach(internship => {
+        const url = internship.applicationUrl && internship.applicationUrl.trim();
+        const isValidUrl = url && (url.startsWith('http://') || url.startsWith('https://'));
+        const card = document.createElement('div');
+        card.className = 'internship-card';
+        card.dataset.id = internship.id;
+        const currentStatus = internship.status || 'applied';
+        const statusLabels = { applied: 'Applied', interview: 'Interview', offer: 'Offer', rejected: 'Rejected' };
+        const pillsHtml = Object.entries(statusLabels).map(([val, label]) =>
+            `<button class="app-status-pill ${currentStatus === val ? `active-pill-${val}` : ''}" data-id="${internship.id}" data-status="${val}">${label}</button>`
+        ).join('');
+        card.innerHTML = `
+            <div class="internship-card-header">
+                <span class="internship-expand-icon">▶</span>
+                <div class="internship-card-info">
+                    <div class="internship-card-name">${escapeHtml(internship.name || 'Untitled')}</div>
+                    <div class="internship-card-meta">
+                        ${internship.period ? `<span>Period: ${escapeHtml(internship.period)}</span>` : ''}
+                        ${internship.submittedAt ? `<span>Submitted: ${internship.submittedAt}</span>` : ''}
+                    </div>
+                </div>
+                <div class="app-status-pills">${pillsHtml}</div>
+                <div class="internship-card-actions">
+                    ${isValidUrl ? `<a href="${escapeHtml(url)}" class="internship-open-link" target="_blank" rel="noopener noreferrer">Open</a>` : ''}
+                    <button class="task-status-btn submitted-undo-btn" data-id="${internship.id}" style="color:#949ba4;">↩ Undo</button>
+                </div>
+            </div>
+            <div class="internship-card-body">
+                ${internship.officialDueDate || internship.personalDueDate ? `
+                <div class="internship-subsection">
+                    <div class="internship-subsection-title">DEADLINES</div>
+                    <div style="font-size:13px;color:#949ba4;">
+                        ${internship.officialDueDate ? `Official: ${internship.officialDueDate}` : ''}
+                        ${internship.officialDueDate && internship.personalDueDate ? ' • ' : ''}
+                        ${internship.personalDueDate ? `Target: ${internship.personalDueDate}` : ''}
+                    </div>
+                </div>` : ''}
+                ${(internship.contacts || []).length ? `
+                <div class="internship-subsection">
+                    <div class="internship-subsection-title">CONTACTS</div>
+                    <div class="contact-rows">${(internship.contacts || []).map(c => `
+                        <div class="contact-row">
+                            <input type="text" value="${escapeHtml(c.name || '')}" placeholder="Name" readonly>
+                            <input type="text" value="${escapeHtml(c.role || '')}" placeholder="Role" readonly>
+                            <input type="text" value="${escapeHtml(c.email || '')}" placeholder="Email" readonly>
+                        </div>`).join('')}
+                    </div>
+                </div>` : ''}
+            </div>`;
+        container.appendChild(card);
+    });
+
+    container.querySelectorAll('.internship-card-header').forEach(header => {
+        header.addEventListener('click', () => header.closest('.internship-card').classList.toggle('expanded'));
+    });
+    container.querySelectorAll('.submitted-undo-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.unmarkInternshipDone(btn.dataset.id);
+        });
+    });
+    container.querySelectorAll('.app-status-pill').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            window.updateInternshipStatus(btn.dataset.id, btn.dataset.status);
+        });
+    });
+}
+
+// --- RECOMMENDED INTERNSHIPS ---
+async function loadRecommendations() {
+    const container = document.getElementById('recommended-items');
+    if (!container) return;
+    try {
+        const res = await fetch(`${CHAT_PROXY}/recommendations`);
+        const data = await res.json();
+        renderRecommendations(data);
+    } catch (e) {
+        console.error('Recommendations load error:', e);
+        container.innerHTML = '<div class="internships-loading">Failed to load recommendations.</div>';
+    }
+}
+
+function renderRecommendations(data) {
+    const container = document.getElementById('recommended-items');
+    const lastFetchedEl = document.getElementById('recommended-last-fetched');
+    if (!container) return;
+
+    if (lastFetchedEl && data.lastFetched) {
+        const d = new Date(data.lastFetched);
+        lastFetchedEl.textContent = `Last updated: ${d.toLocaleDateString()} ${d.toLocaleTimeString()}${data.stale ? ' (stale)' : ''}`;
+    } else if (lastFetchedEl) {
+        lastFetchedEl.textContent = '';
+    }
+
+    const items = data.items || [];
+    if (items.length === 0) {
+        if (!data.lastFetched) {
+            container.innerHTML = '<div class="internships-loading">Configure your mailing list email in Settings, then click Refresh.</div>';
+        } else {
+            container.innerHTML = '<div class="internships-loading">No opportunities found in recent emails. Try clicking Refresh.</div>';
+        }
+        return;
+    }
+
+    container.innerHTML = '';
+    items.forEach((item, idx) => {
+        const card = document.createElement('div');
+        card.className = 'internship-card';
+        const deadlineHtml = item.deadline
+            ? `<span class="internship-status-badge on-track">${item.deadline}</span>`
+            : '';
+        const url = item.applicationUrl && item.applicationUrl.trim();
+        const isValidUrl = url && (url.startsWith('http://') || url.startsWith('https://'));
+        card.innerHTML = `
+            <div class="internship-card-header">
+                <div class="internship-card-info" style="flex:1;">
+                    <div class="internship-card-name">${escapeHtml(item.name || 'Untitled')}</div>
+                    <div class="internship-card-meta">
+                        ${item.company ? `<span>${escapeHtml(item.company)}</span>` : ''}
+                        ${deadlineHtml}
+                    </div>
+                    ${item.description ? `<div style="color:#949ba4; font-size:12px; margin-top:4px;">${escapeHtml(item.description)}</div>` : ''}
+                </div>
+                <div class="internship-card-actions">
+                    ${isValidUrl ? `<a href="${escapeHtml(url)}" class="internship-open-link" target="_blank" rel="noopener noreferrer">View</a>` : ''}
+                    <button class="task-status-btn rec-add-btn" data-idx="${idx}" style="color:#43b581;">+ Add to Tracker</button>
+                </div>
+            </div>`;
+        container.appendChild(card);
+    });
+
+    container.querySelectorAll('.rec-add-btn').forEach(btn => {
+        btn.addEventListener('click', (e) => {
+            e.stopPropagation();
+            const idx = parseInt(btn.dataset.idx);
+            addRecommendedToTracker(items[idx]);
+        });
+    });
+}
+
+window.refreshRecommendations = async function () {
+    const btn = document.getElementById('refresh-recommendations-btn');
+    const container = document.getElementById('recommended-items');
+    if (btn) btn.textContent = 'Refreshing...';
+    if (btn) btn.disabled = true;
+    try {
+        const res = await fetch(`${CHAT_PROXY}/recommendations/refresh`, { method: 'POST' });
+        const data = await res.json();
+        if (data.error) {
+            container.innerHTML = `<div class="internships-loading">${escapeHtml(data.error)}</div>`;
+        } else {
+            renderRecommendations(data);
+        }
+    } catch (e) {
+        console.error('Recommendations refresh error:', e);
+        container.innerHTML = '<div class="internships-loading">Failed to refresh. Check if proxies are running.</div>';
+    }
+    if (btn) { btn.textContent = 'Refresh'; btn.disabled = false; }
+};
+
+function addRecommendedToTracker(item) {
+    window.switchInternshipTab('active');
+    const form = document.getElementById('add-internship-form');
+    if (!form.classList.contains('visible')) form.classList.add('visible');
+    document.getElementById('new-internship-name').value = item.company
+        ? `${item.company} - ${item.name}`
+        : item.name || '';
+    document.getElementById('new-internship-url').value = item.applicationUrl || '';
+    document.getElementById('new-internship-official-due').value = item.deadline || '';
+    document.getElementById('new-internship-personal-due').value = '';
+    document.getElementById('new-internship-period').value = '';
+    const instructionsEl = document.getElementById('new-internship-instructions');
+    if (instructionsEl) instructionsEl.value = item.description || '';
+}
+
+window.saveRecommendationsConfig = async function () {
+    const sender = document.getElementById('rec-sender-email')?.value?.trim() || '';
+    const account = parseInt(document.getElementById('rec-account')?.value) || 1;
+    try {
+        await fetch(`${CHAT_PROXY}/recommendations/config`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ sender, account })
+        });
+        const msg = document.getElementById('rec-save-msg');
+        if (msg) { msg.style.display = ''; setTimeout(() => msg.style.display = 'none', 2000); }
+    } catch (e) {
+        console.error('Failed to save recommendations config:', e);
+    }
+};
+
+async function loadRecommendationsConfig() {
+    try {
+        const res = await fetch(`${CHAT_PROXY}/recommendations/config`);
+        const cfg = await res.json();
+        const senderEl = document.getElementById('rec-sender-email');
+        const accountEl = document.getElementById('rec-account');
+        if (senderEl && cfg.sender) senderEl.value = cfg.sender;
+        if (accountEl && cfg.account) accountEl.value = cfg.account;
+    } catch (e) { }
+}
 
 // --- ADD TASK FORM ---
 let schemaLoaded = false;
