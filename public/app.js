@@ -1,13 +1,14 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-app.js";
 import { getFirestore, doc, onSnapshot, getDoc, setDoc } from "https://www.gstatic.com/firebasejs/10.8.1/firebase-firestore.js";
 
+// See .env.example for required Firebase configuration values
 const firebaseConfig = {
     apiKey: "YOUR_FIREBASE_API_KEY",
     authDomain: "YOUR_APP.firebaseapp.com",
     projectId: "YOUR_PROJECT_ID",
     storageBucket: "YOUR_APP.firebasestorage.app",
     messagingSenderId: "YOUR_SENDER_ID",
-    appId: "1:YOUR_SENDER_ID:web:4e5e47899b69ef7c83bce5"
+    appId: "YOUR_APP_ID"
 };
 
 const app = initializeApp(firebaseConfig);
